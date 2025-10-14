@@ -12,7 +12,13 @@ include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
 # Create your executable
-add_executable(kaledio_lang kaledio_lang.cpp)
+add_executable(kaledio_lang
+    src/main.cpp
+    src/lexer.cpp
+    src/parser.cpp
+    src/ast.cpp
+    src/codegen.cpp
+)
 
 # Link with LLVM libraries
 llvm_map_components_to_libnames(LLVM_LIBS core support native orcjit irreader)
