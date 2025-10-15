@@ -54,7 +54,6 @@ static void HandleExtern() {
         getNextToken();
     }
 }
-std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 
 static void HandleTopLevelExpression() {
     // Evaluate a top-level expression into an anonymous function.
@@ -69,7 +68,7 @@ static void HandleTopLevelExpression() {
             auto RT = TheJIT->getMainJITDylib().createResourceTracker();
             auto TSM = ThreadSafeModule(std::move(TheModule), std::move(TheContext));
             ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
-            
+
             InitializeModule();
 
             // Search the JIT for the __anon_expr symbol.
@@ -130,7 +129,7 @@ int main() {
     fprintf(stderr, "ready> ");
     getNextToken();
 
-    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create()); // TODO: understand how using the codegen.h this being globally availabe in this file and codgen.cpp
+    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create()); 
     
     // Make the module, which holds all the code.
     InitializeModule();

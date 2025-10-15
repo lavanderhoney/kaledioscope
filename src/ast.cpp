@@ -129,6 +129,9 @@ llvm::Function *FunctionAST::codegen() {
 
         // Validate the generated code, checking for consistency.
         llvm::verifyFunction(*TheFunction);
+
+        // Run the optimizer on the function
+        TheFPM->run(*TheFunction, *TheFAM);
         return TheFunction;
     }
 
