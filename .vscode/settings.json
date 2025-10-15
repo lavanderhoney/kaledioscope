@@ -52,6 +52,14 @@
         "xutility": "cpp",
         "map": "cpp",
         "vector": "cpp",
-        "xtree": "cpp"
+        "xtree": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "xhash": "cpp",
+        "forward_list": "cpp",
+        "set": "cpp",
+        "unordered_map": "cpp"
     }
 }

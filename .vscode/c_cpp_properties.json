@@ -4,7 +4,9 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/**",
-                "C:\\build\\Release\\bin"
+                "C:\\build\\Release\\bin",
+                "C:\\llvm\\llvm\\include",
+                "C:\\build\\include"
             ],
             "defines": [
                 "_DEBUG",
