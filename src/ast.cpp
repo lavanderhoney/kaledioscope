@@ -7,6 +7,9 @@
 #include "llvm/IR/Verifier.h"
 #include <algorithm>
 
+// Forward declaration
+llvm::Function *getFunction(std::string Name);
+
 llvm::Value *NumberExprAST::codegen() {
     return llvm::ConstantFP::get(llvm::Type::getDoubleTy(*TheContext), llvm::APFloat(Val));
 }
@@ -47,7 +50,8 @@ llvm::Value *BinaryExprAST::codegen() {
 }
 
 llvm::Value *CallExprAST::codegen() {
-    llvm::Function *CalleeF = TheModule->getFunction(Callee);
+     // Look up the name in the global module table.
+    llvm::Function *CalleeF = getFunction(Callee);
     if (!CalleeF)
         return LogErrorV("Unknown function referenced");
 
@@ -79,16 +83,36 @@ llvm::Function *PrototypeAST::codegen() {
     return F;
 }
 
-llvm::Function *FunctionAST::codegen() {
-    // First, check for an existing function from a previous 'extern' declaration.
-    llvm::Function *TheFunction = TheModule->getFunction(Proto->getName());
-    if (!TheFunction)
-        TheFunction = Proto->codegen();
-    if (!TheFunction)
-        return nullptr;
-    if (!TheFunction->empty())
-        return (llvm::Function*)LogErrorV("Function cannot be redefined.");
+llvm::Function *getFunction(std::string Name){
+    // First, see if the function has already been added to the current module.
+    if(auto *F = TheModule->getFunction(Name)){
+        return F;
+    }
 
+    // If not, check whether we can codegen the declaration from some existing prototype.
+    auto FI = FunctionProtos.find(Name);
+    if (FI != FunctionProtos.end()){
+        return FI->second->codegen(); // this will create the function in the new modu
+    }
+
+    // If no existing prototype exists, return null.
+    return nullptr;
+}
+
+llvm::Function *FunctionAST::codegen() {
+     // Transfer ownership of the prototype to the FunctionProtos map, but keep a reference to it for use below.
+    auto &P = *Proto;
+    FunctionProtos[Proto->getName()] = std::move(Proto);
+
+    // First, check for an existing function from a previous 'extern' declaration.
+    llvm::Function *TheFunction = getFunction(P.getName());
+    if (!TheFunction){
+        return nullptr;
+    }
+    if (!TheFunction->empty()) {
+        return (llvm::Function*)LogErrorV("Function cannot be redefined.");
+    }
+    
     // Create a new basic block named entry to start insertion into.
     llvm::BasicBlock *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
     Builder->SetInsertPoint(BB);
@@ -105,7 +129,6 @@ llvm::Function *FunctionAST::codegen() {
 
         // Validate the generated code, checking for consistency.
         llvm::verifyFunction(*TheFunction);
-
         return TheFunction;
     }
 

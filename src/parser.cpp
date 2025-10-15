@@ -109,7 +109,7 @@ std::unique_ptr<ExprAST> ParseBinOpRHS(
     std::unique_ptr<ExprAST> LHS) {
 
         while (true) {
-            int TokPrec = GetTokPrecedence();
+            int TokPrec = GetTokPrecedence(); // precedence of the current token
 
             if (TokPrec < ExprPrec) {
                 return LHS;

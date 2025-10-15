@@ -2,11 +2,22 @@
 #include "parser.h"
 #include "codegen.h"
 #include "llvm/IR/Module.h"
+#include "KaleidoscopeJIT.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Target/TargetMachine.h"
+#include <cassert>
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+
+using namespace llvm;
+using namespace llvm::orc;
 
 //===----------------------------------------------------------------------===//
 // Top-Level parsing
 //===----------------------------------------------------------------------===//
+static ExitOnError ExitOnErr;
 
 static void HandleDefinition() {
     if (auto FnAST = ParseDefinition()) {
@@ -16,6 +27,8 @@ static void HandleDefinition() {
             fprintf(stderr, "\n");
             // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
+            ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
+            InitializeModule();
         }
     } else {
         // Skip token for error recovery.
@@ -31,12 +44,17 @@ static void HandleExtern() {
             fprintf(stderr, "\n");
             // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
+            
+            //register the function prototype
+            FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
+
         }
     } else {
         // Skip token for error recovery.
         getNextToken();
     }
 }
+std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 
 static void HandleTopLevelExpression() {
     // Evaluate a top-level expression into an anonymous function.
@@ -47,9 +65,27 @@ static void HandleTopLevelExpression() {
             fprintf(stderr, "\n");
             // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
+    
+            auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+            auto TSM = ThreadSafeModule(std::move(TheModule), std::move(TheContext));
+            ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+            
+            InitializeModule();
 
-            // Remove the anonymous expression.
-            FnIR->eraseFromParent();
+            // Search the JIT for the __anon_expr symbol.
+            auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
+            assert(ExprSymbol.getAddress() && "Function not found");
+
+             // Remove the anonymous expression.
+            // FnIR->eraseFromParent();
+
+            // Get the symbol's address and cast it to the right type (takes no
+            // arguments, returns a double) so we can call it as a native function.
+            double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
+            fprintf(stderr, "Evaluated to %f\n", FP());
+
+            // Delete the anonymous expression module from the JIT.
+            ExitOnErr(RT->remove());
         }
     } else {
         // Skip token for error recovery.
@@ -86,10 +122,16 @@ static void MainLoop() {
 
 int main() {
 
+    InitializeNativeTarget();
+    InitializeNativeTargetAsmPrinter();
+    InitializeNativeTargetAsmParser();
+    
     // Prime the first token.
     fprintf(stderr, "ready> ");
     getNextToken();
 
+    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create()); // TODO: understand how using the codegen.h this being globally availabe in this file and codgen.cpp
+    
     // Make the module, which holds all the code.
     InitializeModule();
 
