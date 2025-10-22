@@ -45,9 +45,8 @@ static void HandleExtern() {
             // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
             
-            //register the function prototype
+            // Register the function prototype
             FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
-
         }
     } else {
         // Skip token for error recovery.
@@ -115,6 +114,24 @@ static void MainLoop() {
     }
 }
 
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+  fputc((char)X, stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
+}
+
 //===----------------------------------------------------------------------===//
 // Main driver code.
 //===----------------------------------------------------------------------===//
@@ -138,6 +155,6 @@ int main() {
     MainLoop();
 
     // Print out all of the generated code.
-    TheModule->print(llvm::errs(), nullptr);
+    // TheModule->print(llvm::errs(), nullptr);
     return 0;
 }

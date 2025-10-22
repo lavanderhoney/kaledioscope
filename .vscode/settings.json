@@ -60,6 +60,25 @@
         "xhash": "cpp",
         "forward_list": "cpp",
         "set": "cpp",
-        "unordered_map": "cpp"
+        "unordered_map": "cpp",
+        "algorithm": "cpp",
+        "chrono": "cpp",
+        "cinttypes": "cpp",
+        "condition_variable": "cpp",
+        "coroutine": "cpp",
+        "resumable": "cpp",
+        "functional": "cpp",
+        "future": "cpp",
+        "iomanip": "cpp",
+        "mutex": "cpp",
+        "numeric": "cpp",
+        "optional": "cpp",
+        "random": "cpp",
+        "ratio": "cpp",
+        "shared_mutex": "cpp",
+        "sstream": "cpp",
+        "stop_token": "cpp",
+        "thread": "cpp",
+        "variant": "cpp"
     }
 }
