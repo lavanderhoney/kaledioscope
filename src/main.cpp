@@ -11,23 +11,20 @@
 #include <cstdio>
 #include <cstdlib>
 
-using namespace llvm;
-using namespace llvm::orc;
-
 //===----------------------------------------------------------------------===//
 // Top-Level parsing
 //===----------------------------------------------------------------------===//
-static ExitOnError ExitOnErr;
+static llvm::ExitOnError ExitOnErr;
 
 static void HandleDefinition() {
     if (auto FnAST = ParseDefinition()) {
         if (auto *FnIR = FnAST->codegen()) {
             fprintf(stderr, "Read function definition:");
-            FnIR->print(llvm::errs());
+            // FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
             // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
-            ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
+            ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
             InitializeModule();
         }
     } else {
@@ -40,7 +37,7 @@ static void HandleExtern() {
     if (auto ProtoAST = ParseExtern()) {
         if (auto *FnIR = ProtoAST->codegen()) {
             fprintf(stderr, "Read extern: ");
-            FnIR->print(llvm::errs());
+            // FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
             // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
@@ -59,13 +56,13 @@ static void HandleTopLevelExpression() {
     if (auto FnAST = ParseTopLevelExpr()) {
         if (auto *FnIR = FnAST->codegen()) {
             fprintf(stderr, "Read top-level expression:");
-            FnIR->print(llvm::errs());
+            // FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
             // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
     
             auto RT = TheJIT->getMainJITDylib().createResourceTracker();
-            auto TSM = ThreadSafeModule(std::move(TheModule), std::move(TheContext));
+            auto TSM = llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext));
             ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
 
             InitializeModule();
@@ -138,12 +135,12 @@ extern "C" DLLEXPORT double printd(double X) {
 
 int main() {
 
-    InitializeNativeTarget();
-    InitializeNativeTargetAsmPrinter();
-    InitializeNativeTargetAsmParser();
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
     
     // Prime the first token.
-    fprintf(stderr, "ready> ");
+    fprintf(stderr, "kaledioscope>> ");
     getNextToken();
 
     TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create()); 

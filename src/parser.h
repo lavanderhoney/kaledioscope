@@ -18,6 +18,8 @@ std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LH
 std::unique_ptr<PrototypeAST> ParsePrototype();
 std::unique_ptr<FunctionAST> ParseDefinition();
 std::unique_ptr<PrototypeAST> ParseExtern();
+std::unique_ptr<IfExprAST> ParseIfExpr();
+std::unique_ptr<ForExprAST> ParseForExpr();
 std::unique_ptr<FunctionAST> ParseTopLevelExpr();
 
 // Precedence helper

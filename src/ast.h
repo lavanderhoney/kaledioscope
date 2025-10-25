@@ -80,4 +80,32 @@ public:
     llvm::Function *codegen();
 };
 
+// IfElse block AST, it just stores pointers to cond, else, then blocks
+class IfExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Cond, Then, Else;
+public:
+    IfExprAST(
+        std::unique_ptr<ExprAST> cond,
+        std::unique_ptr<ExprAST> then,
+        std::unique_ptr<ExprAST> else_st
+    ) : Cond(std::move(cond)), Then(std::move(then)), Else(std::move(else_st)) {}
+    llvm::Value *codegen() override;
+}; 
+
+// expression class for for/in
+// Start: expr for initialization of cntr, End: ending condition expression, Step: cntr incrementing expression,  
+class ForExprAST : public ExprAST {
+    std::string VarName;
+    std::unique_ptr<ExprAST> Start, End, Step, Body;
+public:
+    ForExprAST(
+        std::string &varname,
+        std::unique_ptr<ExprAST> start,
+        std::unique_ptr<ExprAST> end, 
+        std::unique_ptr<ExprAST> step,
+        std::unique_ptr<ExprAST> body
+    ) : VarName(varname), Start(std::move(start)), End(std::move(end)), 
+    Step(std::move(step)), Body(std::move(body)) {}
+    llvm::Value *codegen() override;
+};
 #endif // AST_H
