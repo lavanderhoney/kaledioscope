@@ -7,11 +7,6 @@
 #include <vector>
 #include <string>
 
-// Forward declarations
-class ExprAST;
-class PrototypeAST;
-class FunctionAST;
-
 // Base class for all expression nodes
 class ExprAST {
 public:
@@ -34,6 +29,7 @@ public:
     llvm::Value *codegen() override;
 };
 
+/// Expression class for binary operators
 class BinaryExprAST : public ExprAST {
     char Op; // + - * / <>
     std::unique_ptr<ExprAST> LHS, RHS;
@@ -43,6 +39,18 @@ public:
         std::unique_ptr<ExprAST> lhs,
         std::unique_ptr<ExprAST> rhs
     ) : Op(op), LHS(std::move(lhs)), RHS(std::move(rhs)) {}
+    llvm::Value *codegen() override;
+};
+
+/// Expression class for unary operators
+class UnaryExprAST : public ExprAST {
+    char Opcode;
+    std::unique_ptr<ExprAST> Operand;
+
+public:
+    UnaryExprAST(char opcode, std::unique_ptr<ExprAST>operand) : 
+    Opcode(opcode), Operand(std::move(operand)) {}
+
     llvm::Value *codegen() override;
 };
 
@@ -62,11 +70,31 @@ public:
 class PrototypeAST {
     std::string Name;
     std::vector<std::string> Args;
+    bool IsOperator;
+    unsigned Precedence;
 public:
-    PrototypeAST(const std::string &Name, std::vector<std::string> Args)
-      : Name(Name), Args(std::move(Args)) {}
+    PrototypeAST(
+        const std::string &Name, 
+        std::vector<std::string> Args, 
+        bool isoperator = false, 
+        unsigned precedence = 0
+    )
+    : Name(Name), 
+    Args(std::move(Args)),
+    IsOperator(isoperator),
+    Precedence(precedence) {}
     llvm::Function *codegen();
     const std::string &getName() const { return Name; }
+
+    bool isUnaryOp() const { return IsOperator && Args.size() ==1; }
+    bool isBinaryOp() const { return IsOperator && Args.size() ==2; }
+
+    char getOperatorName() const {
+        assert(isUnaryOp() || isBinaryOp());
+        return Name[Name.size()-1];
+    }
+
+    unsigned getBinaryPrecedence() const { return Precedence; }
 };
 
 /// FunctionAST - This class represents a function definition itself.

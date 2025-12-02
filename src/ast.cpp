@@ -1,5 +1,6 @@
 #include "ast.h"
 #include "codegen.h"
+#include "parser.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/BasicBlock.h"
@@ -45,8 +46,28 @@ llvm::Value *BinaryExprAST::codegen() {
         // Convert bool 0/1 to double 0.0 or 1.0
         return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext), "booltmp");
     default:
-        return LogErrorV("invalid binary operator");
+        break;
     }
+
+    // If it wasn't a builtin binary operator, it must be a user defined one. Emit a call to it.
+    llvm::Function *F = getFunction(std::string("binary") + Op);
+    assert(F && "binary operator not found!");
+
+    llvm::Value *Ops[2] = { L, R };
+    return Builder->CreateCall(F, Ops, "binop");
+}
+
+llvm::Value *UnaryExprAST::codegen(){
+    llvm::Value *OperandV = Operand->codegen();
+    if (!OperandV){
+        return nullptr;
+    }
+
+    llvm::Function *F = getFunction(std::string("unary") + Opcode);
+    if (!F){
+        return LogErrorV("Unkown unary operator");
+    }
+    return Builder->CreateCall(F, OperandV, "unop");
 }
 
 llvm::Value *IfExprAST::codegen(){
@@ -138,7 +159,7 @@ llvm::Value *ForExprAST::codegen(){
     llvm::Value *EndCond = End->codegen();
     if (!EndCond){
         return nullptr;
-    }
+    }   
     // Convert condition to a bool by comparing non-equal to 0.0.
     EndCond = Builder->CreateFCmpONE(EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "loopcond");
 
@@ -223,10 +244,15 @@ llvm::Function *FunctionAST::codegen() {
     if (!TheFunction){
         return nullptr;
     }
+    
+    if (P.isBinaryOp()){
+        BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
+    }
+
     if (!TheFunction->empty()) {
         return (llvm::Function*)LogErrorV("Function cannot be redefined.");
     }
-    
+
     // Create a new basic block named entry to start insertion into.
     llvm::BasicBlock *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
     Builder->SetInsertPoint(BB);

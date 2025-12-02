@@ -45,6 +45,12 @@ int gettok() {
         if (IdentifierStr == "in"){
             return tok_in;
         }
+        if (IdentifierStr == "unary"){
+            return tok_unary;
+        }
+        if (IdentifierStr == "binary"){
+            return tok_binary;
+        }
         return tok_identifier;
     }
 

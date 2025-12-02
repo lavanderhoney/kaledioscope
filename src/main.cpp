@@ -20,10 +20,10 @@ static void HandleDefinition() {
     if (auto FnAST = ParseDefinition()) {
         if (auto *FnIR = FnAST->codegen()) {
             fprintf(stderr, "Read function definition:");
-            // FnIR->print(llvm::errs());
+            FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
             // Print the full module IR after the definition
-            TheModule->print(llvm::errs(), nullptr);
+            // TheModule->print(llvm::errs(), nullptr);
             ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
             InitializeModule();
         }
@@ -53,8 +53,10 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpression() {
     // Evaluate a top-level expression into an anonymous function.
-    if (auto FnAST = ParseTopLevelExpr()) {
-        if (auto *FnIR = FnAST->codegen()) {
+    auto FnAST = ParseTopLevelExpr();
+    if (FnAST) {
+        auto *FnIR = FnAST->codegen();
+        if (FnIR) {
             fprintf(stderr, "Read top-level expression:");
             // FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
@@ -70,9 +72,6 @@ static void HandleTopLevelExpression() {
             // Search the JIT for the __anon_expr symbol.
             auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
             assert(ExprSymbol.getAddress() && "Function not found");
-
-             // Remove the anonymous expression.
-            // FnIR->eraseFromParent();
 
             // Get the symbol's address and cast it to the right type (takes no
             // arguments, returns a double) so we can call it as a native function.
@@ -91,22 +90,22 @@ static void HandleTopLevelExpression() {
 /// top ::= definition | external | expression | ';'
 static void MainLoop() {
     while (true) {
-        fprintf(stderr, "ready> ");
+        fprintf(stderr, "kaledioscope>>> ");
         switch (CurTok) {
-        case tok_eof:
-            return;
-        case ';': // ignore top-level semicolons.
-            getNextToken();
-            break;
-        case tok_def:
-            HandleDefinition();
-            break;
-        case tok_extern:
-            HandleExtern();
-            break;
-        default:
-            HandleTopLevelExpression();
-            break;
+            case tok_eof:
+                return;
+            case ';': // ignore top-level semicolons.
+                getNextToken();
+                break;
+            case tok_def:
+                HandleDefinition();
+                break;
+            case tok_extern:
+                HandleExtern();
+                break;
+            default:
+                HandleTopLevelExpression();
+                break;
         }
     }
 }
@@ -139,8 +138,14 @@ int main() {
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
     
+    // 1 is lowest precedence.
+    BinopPrecedence['<'] = 10;
+    BinopPrecedence['+'] = 20;
+    BinopPrecedence['-'] = 20;
+    BinopPrecedence['*'] = 40; // highest.
+    
     // Prime the first token.
-    fprintf(stderr, "kaledioscope>> ");
+    fprintf(stderr, "kaledioscope>>> ");
     getNextToken();
 
     TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create()); 
@@ -151,7 +156,5 @@ int main() {
     // Run the main "interpreter loop" now.
     MainLoop();
 
-    // Print out all of the generated code.
-    // TheModule->print(llvm::errs(), nullptr);
     return 0;
 }
