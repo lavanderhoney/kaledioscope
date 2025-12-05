@@ -90,8 +90,9 @@ std::unique_ptr<ExprAST> ParsePrimary() {
             return ParseIfExpr();
         case tok_for:
             return ParseForExpr();
+        case tok_var:
+            return ParseVarExpr();
         default:
-            std::cout << "CurTok: " << CurTok << std::endl;
             return LogError("unknown token when expecting an expression");
     }
 }
@@ -128,10 +129,55 @@ std::unique_ptr<ExprAST> ParseUnary() {
     return nullptr;
 }
 
+/// varexpr ::= 'var' identifier ('=' expression)?
+//                    (',' identifier ('=' expression)?)* 'in' expression
+std::unique_ptr<ExprAST> ParseVarExpr(){
+    getNextToken(); // eat 'var'
+
+    if(CurTok != tok_identifier){
+        return LogError("expected identifier after 'var' ");
+    }
+
+    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+    while (true){
+        std::string Name = IdentifierStr;
+        getNextToken(); // eat the identifier
+
+        std::unique_ptr<ExprAST> Init;
+        // check if it has initial value or not (optional init)
+        if (CurTok == '='){
+            getNextToken(); // eat '='
+            Init = ParseExpression();
+            if (!Init) return nullptr;
+        }
+        VarNames.push_back(std::make_pair(Name, std::move(Init)));
+
+        // end of var list, exit loop
+        if (CurTok != ',') break;
+        getNextToken(); // eat ','
+
+        if (CurTok != tok_identifier)
+            return LogError("expected identifier list after var");
+    }
+
+    // after variable list is complete, we have to have 'in'.
+    if (CurTok != tok_in)
+        return LogError("expected 'in' keyword after 'var'");
+    getNextToken(); // eat 'in'
+
+    auto Body = ParseExpression();
+    if (!Body){
+        std::cout << "DEBUG---ParseExpression for var body failed --- CurTok: " << CurTok << std::endl;
+        return nullptr;
+    }
+    
+    return std::make_unique<VarExprAST>(std::move(VarNames), std::move(Body));
+}
+
 /// binoprhs
 ///   ::= ('+' unary)*
 std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, // precedence number
-    std::unique_ptr<ExprAST> LHS) {    
+    std::unique_ptr<ExprAST> LHS) {   
         while (true) {
             int TokPrec = GetTokPrecedence(); // precedence of the current token
             if (TokPrec < ExprPrec) {
@@ -154,7 +200,6 @@ std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, // precedence number
             } else {
                 return nullptr;
             }
-            
         }
 }
 
@@ -165,7 +210,10 @@ std::unique_ptr<ExprAST> ParseExpression() {
     auto LHS = ParseUnary();
     if (LHS) {
         return ParseBinOpRHS(0, std::move(LHS));
+    } else {
+        std::cout << "DEBUG---ParseExpression failed, LHS return nullptr --- CurTok: " << CurTok << std::endl;
     }
+
     return nullptr;
 }
 
@@ -200,7 +248,7 @@ std::unique_ptr<PrototypeAST> ParsePrototype() {
                 if (NumVal < 1 || NumVal > 100){
                     return LogErrorP("Precedence value must be in range 1...100");
                 }
-                BinaryPrecedence = NumVal;
+                BinaryPrecedence = static_cast<unsigned>(NumVal);
             }
             getNextToken();
             break;
@@ -251,6 +299,7 @@ std::unique_ptr<FunctionAST> ParseDefinition() {
     if (E) {
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
     } else {
+        std::cout << "DEBUG---Parsing function body failed --- CurTok: " << CurTok << std::endl;
         return nullptr;
     }
 }
@@ -337,8 +386,10 @@ std::unique_ptr<ForExprAST> ParseForExpr(){
     getNextToken();  // eat 'in'.
 
     auto Body = ParseExpression();
-    if (!Body)
-      return nullptr;
+    if (!Body){
+        std::cout << "DEBUG---ParseExpression for var body failed --- CurTok: " << CurTok << std::endl;
+        return nullptr;
+    }
 
     return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End), std::move(Step), std::move(Body));
     
@@ -352,6 +403,8 @@ std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
         auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
                                                     std::vector<std::string>());
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    } else {
+        std::cout << "DEBUG---ParseExpression failed --- CurTok: " << CurTok << std::endl;
     }
     return nullptr;
 }

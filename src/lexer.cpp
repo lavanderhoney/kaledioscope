@@ -51,6 +51,9 @@ int gettok() {
         if (IdentifierStr == "binary"){
             return tok_binary;
         }
+        if (IdentifierStr == "var"){
+            return tok_var;
+        }
         return tok_identifier;
     }
 

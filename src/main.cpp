@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-
+#include <iostream>
 //===----------------------------------------------------------------------===//
 // Top-Level parsing
 //===----------------------------------------------------------------------===//
@@ -20,15 +20,26 @@ static void HandleDefinition() {
     if (auto FnAST = ParseDefinition()) {
         if (auto *FnIR = FnAST->codegen()) {
             fprintf(stderr, "Read function definition:");
-            FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
+
             // Print the full module IR after the definition
-            // TheModule->print(llvm::errs(), nullptr);
-            ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
+            TheModule->print(llvm::errs(), nullptr);
+
+            // Try to add module, capture error and print it (don't ExitOnErr)
+            auto TSM = llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext));
+            if (auto Err = TheJIT->addModule(std::move(TSM))) {
+                llvm::errs() << "Error adding module to JIT: " << Err;
+                return;
+            }
+            llvm::errs() << "Module added to JIT.\n";
+
             InitializeModule();
+        }else{
+            llvm::errs() << "DEBUG---Codegen of function definition failed --- CurTok: " << CurTok << "\n";
         }
     } else {
         // Skip token for error recovery.
+        llvm::errs() << "DEBUG---Parsing function definition failed --- CurTok: " << CurTok << "\n";
         getNextToken();
     }
 }
@@ -58,30 +69,42 @@ static void HandleTopLevelExpression() {
         auto *FnIR = FnAST->codegen();
         if (FnIR) {
             fprintf(stderr, "Read top-level expression:");
-            // FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
-            // Print the full module IR after the definition
             TheModule->print(llvm::errs(), nullptr);
-    
+
             auto RT = TheJIT->getMainJITDylib().createResourceTracker();
             auto TSM = llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext));
-            ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+
+            // Try to add module, capture error and print it (don't ExitOnErr)
+            if (auto Err = TheJIT->addModule(std::move(TSM), RT)) {
+                llvm::errs() << "Error adding module to JIT: " << Err;
+                return;
+            }
+            llvm::errs() << "Module added to JIT.\n";
 
             InitializeModule();
 
-            // Search the JIT for the __anon_expr symbol.
-            auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-            assert(ExprSymbol.getAddress() && "Function not found");
+            auto ExprSymbolExpected = TheJIT->lookup("__anon_expr");
+            if (!ExprSymbolExpected) {
+                llvm::errs() << "JIT Lookup Error: " << ExprSymbolExpected.takeError() << "\n";
+                return; // Return to MainLoop
+            }
 
-            // Get the symbol's address and cast it to the right type (takes no
-            // arguments, returns a double) so we can call it as a native function.
+            // Get the symbol's address and cast it to the right type (takes no arguments, returns a double) so we can call it as a native function.
+            auto ExprSymbol = std::move(*ExprSymbolExpected);
             double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
             fprintf(stderr, "Evaluated to %f\n", FP());
 
             // Delete the anonymous expression module from the JIT.
-            ExitOnErr(RT->remove());
+            if (auto Err = RT->remove()) {
+                llvm::errs() << "Error removing module: " << Err << "\n";
+                // We can continue even if removal fails
+            }
+        } else {
+            llvm::errs() << "DEBUG---Codegen of top-level expression failed --- \n";
         }
     } else {
+        llvm::errs() << "DEBUG---Parsing top-level expression failed --- CurTok: " << CurTok << "\n";
         // Skip token for error recovery.
         getNextToken();
     }
@@ -139,6 +162,7 @@ int main() {
     llvm::InitializeNativeTargetAsmParser();
     
     // 1 is lowest precedence.
+    BinopPrecedence['='] = 2;
     BinopPrecedence['<'] = 10;
     BinopPrecedence['+'] = 20;
     BinopPrecedence['-'] = 20;
@@ -148,7 +172,16 @@ int main() {
     fprintf(stderr, "kaledioscope>>> ");
     getNextToken();
 
-    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create()); 
+    auto JITOrErr = llvm::orc::KaleidoscopeJIT::Create();
+    if (!JITOrErr) {
+        llvm::errs() << "Failed to create JIT: ";
+        llvm::errs() << JITOrErr.takeError();
+        llvm::errs() << "\n";
+        return 1; 
+    }
+    
+    // On success, move the created JIT out:
+    TheJIT = std::move(*JITOrErr); 
     
     // Make the module, which holds all the code.
     InitializeModule();

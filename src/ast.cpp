@@ -11,24 +11,51 @@
 // Forward declaration
 llvm::Function *getFunction(std::string Name);
 
+///Create an alloca instruction in the entry block of the function
+llvm::AllocaInst* CreateEntryBlockAlloca(llvm::Function *TheFunction, llvm::StringRef VarName){
+    llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),TheFunction->getEntryBlock().begin());
+
+    return TmpB.CreateAlloca(llvm::Type::getDoubleTy(*TheContext), nullptr, VarName);
+}
+
 llvm::Value *NumberExprAST::codegen() {
     return llvm::ConstantFP::get(llvm::Type::getDoubleTy(*TheContext), llvm::APFloat(Val));
 }
 
 llvm::Value *VariableExprAST::codegen() {
     // find the variable name in the symbol table. We assume that the variable has already been emitted somewhere and its value is available
-    llvm::Value *V = NamedValues[Name];
-    if (!V) {
+    llvm::AllocaInst *A = NamedValues[Name];
+    if (!A) {
         LogErrorV("Unknown variable name");
     }
-    return V;
+    // Load the value
+    return Builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
 }
 
 llvm::Value *BinaryExprAST::codegen() {
+    // Special case '=' because we don't want to emit the LHS as an expression.
+    if (Op == '='){
+        VariableExprAST *LHSE = static_cast<VariableExprAST*>(LHS.get());
+        if (!LHSE){
+            return LogErrorV("destination of '=' must be a variable");
+        }
+        
+        // Codegen the RHS
+        llvm::Value *Val = RHS->codegen();
+        if (!Val)
+            return nullptr;
+
+        llvm::Value *Variable = NamedValues[LHSE->getName()];
+        if (!Variable)
+            return LogErrorV("Unknown variable name");
+        Builder->CreateStore(Val, Variable);
+        return Val;
+    }
     llvm::Value *L = LHS->codegen();
     llvm::Value *R = RHS->codegen();
 
     if (!L || !R) {
+        llvm::errs() << "DEBUG---BinaryExprAST::codegen failed to generate LHS or RHS\n";
         return nullptr;
     }
 
@@ -69,6 +96,45 @@ llvm::Value *UnaryExprAST::codegen(){
     }
     return Builder->CreateCall(F, OperandV, "unop");
 }
+
+llvm::Value *VarExprAST::codegen(){
+    std::vector<llvm::AllocaInst*> OldBindings;
+    llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+    // Register all variables and emit their initializer
+    for (unsigned i=0, e = VarNames.size(); i!=e; i++){
+        const std::string &VarName = VarNames[i].first;
+        ExprAST *Init = VarNames[i].second.get();
+
+        llvm::Value *InitVal;
+        if (Init){
+            InitVal = Init->codegen();
+            if (!InitVal)
+                return nullptr;
+        } else {
+            InitVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
+        }
+
+        llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+        Builder->CreateStore(InitVal, Alloca);
+
+        OldBindings.push_back(NamedValues[VarName]);
+        NamedValues[VarName] = Alloca;
+    }
+    // Codegen the body, now that all vars are in scope.
+    llvm::Value *BodyVal = Body->codegen();
+    if (!BodyVal)
+      return nullptr;
+    
+    // restore the previous variable bindings
+    for(unsigned i=0, e = VarNames.size(); i!=e; i++){
+        NamedValues[VarNames[i].first] = OldBindings[i];
+    }
+
+    // Return the body computation.
+    return BodyVal;
+}
+
 
 llvm::Value *IfExprAST::codegen(){
     llvm::Value *CondV = Cond->codegen();
@@ -118,26 +184,34 @@ llvm::Value *IfExprAST::codegen(){
 }
 
 llvm::Value *ForExprAST::codegen(){
-    llvm::Value *StartVal = Start->codegen(); // emit the IR for Start expr before the variable init, as that is inlined in the Phi node
+    llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+    
+    // Create an alloca for the variable in the entry block
+    llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+    
+    // Emit the start code first, without 'variable' in scope.
+    llvm::Value *StartVal = Start->codegen(); 
     if (!StartVal){
+        llvm::errs() << "DEBUG---Error generating start value for for-loop variable: " << VarName << "\n";
         return nullptr;
     }
-    llvm::BasicBlock *PreHeaderBB = Builder->GetInsertBlock(); // The BB just before the loop begins
-    llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+    // Store the value into the alloca, i.e, the destined register
+    Builder->CreateStore(StartVal, Alloca);
+
     llvm::BasicBlock *LoopBB = llvm::BasicBlock::Create(*TheContext, "loop", TheFunction);
     Builder->CreateBr(LoopBB);
 
     Builder->SetInsertPoint(LoopBB);
-    llvm::PHINode *Variable = Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, VarName);
-    Variable->addIncoming(StartVal, PreHeaderBB); // if the control comes from PreheaderBB, the VarName takes value StartVal
     
     // allow shadowing of the counter variable
-    llvm::Value *OldVal = NamedValues[VarName];
-    NamedValues[VarName] = Variable;
+    llvm::AllocaInst *OldVal = NamedValues[VarName];
+    NamedValues[VarName] = Alloca;
 
     // emit the body value
     llvm::Value *BodyV = Body->codegen();
     if (!BodyV){
+        llvm::errs() << "DEBUG---Error generating body for for-loop variable: " << VarName << "\n";
         return nullptr;
     }
 
@@ -146,6 +220,7 @@ llvm::Value *ForExprAST::codegen(){
     if (Step){
         StepV = Step->codegen();
         if (!StepV){
+            llvm::errs() << "DEBUG---Error generating step for for-loop variable: " << VarName << "\n";
             return nullptr;
         }
     } else {
@@ -154,24 +229,26 @@ llvm::Value *ForExprAST::codegen(){
     }
 
     // value of the counter variable in next iteration
-    llvm::Value *NextVar = Builder->CreateFAdd(Variable, StepV, "nextvar"); 
+    llvm::Value *CurVal = Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());
+    llvm::Value *NextVar = Builder->CreateFAdd(CurVal, StepV, "nextvar"); 
+    // The addIncoming of the phi node is replaced by storing the inc value of counter back to its register
+    Builder->CreateStore(NextVar, Alloca);
 
     llvm::Value *EndCond = End->codegen();
     if (!EndCond){
+        llvm::errs() << "DEBUG---Error generating end condition for for-loop variable: " << VarName << "\n";
         return nullptr;
-    }   
+    }  
     // Convert condition to a bool by comparing non-equal to 0.0.
-    EndCond = Builder->CreateFCmpONE(EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "loopcond");
+    EndCond = Builder->CreateFCmpONE(EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "loopcond");    
 
     // refers to where Builder currently is, which cud be some other nested block, or LoopBB itself. It points to the 'end' of the loop
     llvm::BasicBlock *LoopEndBB = Builder->GetInsertBlock(); 
     llvm::BasicBlock *AfterBB = llvm::BasicBlock::Create(*TheContext, "afterloop", TheFunction);
-    Builder->CreateCondBr(EndCond, LoopBB, AfterBB);    
 
+    Builder->CreateCondBr(EndCond, LoopBB, AfterBB);    
     // Any new code will be inserted in AfterBB.
     Builder->SetInsertPoint(AfterBB);
-
-    Variable->addIncoming(NextVar, LoopEndBB);
 
     //Restore the unshadowed variable
     if (OldVal){
@@ -260,21 +337,38 @@ llvm::Function *FunctionAST::codegen() {
     // Record the function arguments in the NamedValues map.
     NamedValues.clear();
     for (auto &Arg : TheFunction->args()) {
-        NamedValues[std::string(Arg.getName())] = &Arg;
+        // Create alloca for the arguments
+        llvm::AllocaInst *ArgsAlloca = CreateEntryBlockAlloca(TheFunction, Arg.getName()); 
+
+        // Store their initial value into the register
+        Builder->CreateStore(&Arg, ArgsAlloca);
+
+        // Add to symbol table
+        NamedValues[std::string(Arg.getName())] = ArgsAlloca;
     }
 
-    if (llvm::Value *RetVal = Body->codegen()) {
+    llvm::Value *RetVal = Body->codegen();
+    if (RetVal) {
         // Finish off the function.
         Builder->CreateRet(RetVal);
 
         // Validate the generated code, checking for consistency.
-        llvm::verifyFunction(*TheFunction);
+        std::string Str;
+        llvm::raw_string_ostream OS(Str);
+        if (llvm::verifyFunction(*TheFunction, &OS)) {
+            llvm::errs() << "\n\nDEBUG---VERIFIER ERROR FOUND:\n";
+            llvm::errs() << OS.str() << "\n";
+            llvm::errs() << "-----------------------------\n";
 
+            // Setup a safe exit
+            TheFunction->eraseFromParent();
+            return nullptr;
+        }
         // Run the optimizer on the function
         TheFPM->run(*TheFunction, *TheFAM);
         return TheFunction;
-    }
-
+    } 
+    llvm::errs() << "DEBUG---Error generating function body, removing function: " << P.getName() << "\n";
     // Error reading body, remove function.
     TheFunction->eraseFromParent();
     return nullptr;

@@ -22,7 +22,9 @@ enum Token {
     tok_in = -10,
 
     tok_unary = -11,
-    tok_binary = -12
+    tok_binary = -12,
+
+    tok_var = -13
 };
 
 // Global variables for lexer

@@ -27,6 +27,7 @@ class VariableExprAST : public ExprAST {
 public:
     VariableExprAST(const std::string &N) : Name(N) {}
     llvm::Value *codegen() override;
+    const std::string &getName() const { return Name; }
 };
 
 /// Expression class for binary operators
@@ -51,6 +52,19 @@ public:
     UnaryExprAST(char opcode, std::unique_ptr<ExprAST>operand) : 
     Opcode(opcode), Operand(std::move(operand)) {}
 
+    llvm::Value *codegen() override;
+};
+
+/// VarExprAST - Expression class for var/in
+class VarExprAST : public ExprAST {
+    // allow a list of names to be defined all at once
+    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+    std::unique_ptr<ExprAST> Body;
+
+public:
+    VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> varnames,
+    std::unique_ptr<ExprAST> body) :
+    VarNames(std::move(varnames)), Body(std::move(body)) {}
     llvm::Value *codegen() override;
 };
 

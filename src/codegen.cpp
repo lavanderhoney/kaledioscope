@@ -13,6 +13,7 @@
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "llvm/Transforms/Scalar/Reassociate.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "KaleidoscopeJIT.h"
 #include <cstdio>
 
@@ -21,7 +22,7 @@
 std::unique_ptr<llvm::LLVMContext> TheContext;
 std::unique_ptr<llvm::IRBuilder<>> Builder;
 std::unique_ptr<llvm::Module> TheModule;
-std::map<std::string, llvm::Value *> NamedValues;
+std::map<std::string, llvm::AllocaInst *> NamedValues;
 std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 std::unique_ptr<llvm::FunctionPassManager> TheFPM;
@@ -58,7 +59,8 @@ void InitializeModule() {
     TheSI->registerCallbacks(*ThePIC, TheMAM.get());
 
     // add the transformative passes
-    TheFPM->addPass(llvm::InstCombinePass());    
+    TheFPM->addPass(llvm::PromotePass());          // mem2reg pass
+    TheFPM->addPass(llvm::InstCombinePass());     // peephole optimization
     TheFPM->addPass(llvm::ReassociatePass());
     TheFPM->addPass(llvm::GVNPass());
     TheFPM->addPass(llvm::SimplifyCFGPass());
@@ -67,6 +69,8 @@ void InitializeModule() {
     llvm::PassBuilder PB;
     PB.registerModuleAnalyses(*TheMAM);
     PB.registerFunctionAnalyses(*TheFAM);
+    PB.registerLoopAnalyses(*TheLAM);
+    PB.registerCGSCCAnalyses(*TheCGAM);
     PB.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
 
 }
