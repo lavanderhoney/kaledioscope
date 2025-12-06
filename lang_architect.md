@@ -1,1 +1,0 @@
-all values in Kaleidoscope are doubles

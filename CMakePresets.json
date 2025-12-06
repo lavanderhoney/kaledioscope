@@ -1,0 +1,73 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "17",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "LLVM_DIR": "C:/build/lib/cmake/llvm"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "description": "Debug build with full symbols",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Release build with optimizations",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "displayName": "RelWithDebInfo",
+      "description": "Release with debug info",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Debug Build",
+      "configurePreset": "debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Release Build",
+      "configurePreset": "release",
+      "configuration": "Release"
+    },
+    {
+      "name": "relwithdebinfo",
+      "displayName": "RelWithDebInfo Build",
+      "configurePreset": "relwithdebinfo",
+      "configuration": "RelWithDebInfo"
+    }
+  ]
+}

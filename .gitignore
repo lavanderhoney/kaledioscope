@@ -21,6 +21,7 @@ CMakeFiles/
 *.suo
 *.user
 .vs/
+.vscode/
 
 # Temporary files
 *.tmp
